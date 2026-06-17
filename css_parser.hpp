@@ -14,9 +14,6 @@
 
 namespace CSS {
 
-// CSSProperty removed: it was defined but never used internally.
-// CSSRule uses unordered_map<string,string> directly for properties.
-
 class CSSRule {
 private:
   std::string m_selector;
@@ -38,15 +35,12 @@ public:
     return m_properties.find(name) != m_properties.end();
   }
 
-  // Returns nullopt when the property doesn't exist, distinguishing it from
-  // a property that is present but has an empty value.
   std::optional<std::string> getProperty(const std::string& name) const {
     auto it = m_properties.find(name);
     if (it == m_properties.end()) return std::nullopt;
     return it->second;
   }
 
-  // Convenience wrapper: returns the property value or a fallback default.
   std::string getPropertyOr(const std::string& name,
                             const std::string& defaultValue = "") const {
     auto it = m_properties.find(name);
@@ -79,13 +73,11 @@ public:
     return m_rules.find(selector) != m_rules.end();
   }
 
-  // Non-const: returns a mutable pointer, or nullptr if not found.
   CSSRule* getRule(const std::string& selector) {
     auto it = m_rules.find(selector);
     return it != m_rules.end() ? it->second.get() : nullptr;
   }
 
-  // Const overload: allows getRule() on const CSSDocument references.
   const CSSRule* getRule(const std::string& selector) const {
     auto it = m_rules.find(selector);
     return it != m_rules.end() ? it->second.get() : nullptr;
@@ -99,7 +91,6 @@ public:
       m_rules[selector] = std::make_shared<CSSRule>(rule);
       m_selectorOrder.push_back(selector);
     } else {
-      // Merge: later properties overwrite earlier ones (standard CSS cascade).
       auto existing = it->second;
       for (const auto& kv : rule.getProperties())
         existing->setProperty(kv.first, kv.second);
@@ -145,21 +136,18 @@ private:
     return str.substr(start, end - start + 1);
   }
 
-  // Strip /* ... */ block comments from CSS source.
-  // Newlines inside comments are preserved so that line-based diagnostics
-  // (if added later) remain accurate.
   static std::string removeComments(const std::string& css) {
     std::string result;
     result.reserve(css.size());
     size_t i = 0;
     while (i < css.size()) {
       if (i + 1 < css.size() && css[i] == '/' && css[i + 1] == '*') {
-        i += 2; // skip opening /*
+        i += 2;
         while (i + 1 < css.size() && !(css[i] == '*' && css[i + 1] == '/')) {
-          if (css[i] == '\n') result += '\n'; // preserve line structure
+          if (css[i] == '\n') result += '\n'; 
           ++i;
         }
-        if (i + 1 < css.size()) i += 2; // skip closing */
+        if (i + 1 < css.size()) i += 2; 
       } else {
         result += css[i++];
       }
@@ -167,12 +155,11 @@ private:
     return result;
   }
 
-  // Split the (comment-stripped) CSS text into individual rule strings.
-  // Handles nested braces correctly (e.g., @media blocks).
+
   static std::vector<std::string> splitRules(const std::string& cssText) {
     std::vector<std::string> rules;
     std::string currentRule;
-    currentRule.reserve(256); // avoid frequent small reallocations
+    currentRule.reserve(256);
     int braceCount = 0;
 
     for (char c : cssText) {
@@ -182,7 +169,6 @@ private:
       } else if (c == '}') {
         --braceCount;
         if (braceCount == 0) {
-          // Complete rule found — push and reset.
           std::string trimmed = trim(currentRule);
           if (!trimmed.empty()) rules.push_back(std::move(currentRule));
           currentRule.clear();
@@ -190,7 +176,6 @@ private:
         }
       }
     }
-    // Any trailing content without a closing brace is malformed CSS; skip it.
     return rules;
   }
 
@@ -207,21 +192,17 @@ private:
     return {selector, body};
   }
 
-  // Split a CSS declaration block by ';', correctly handling:
-  //   - Parenthesised values:  url(data:image/png;base64,...)  rgb(0,0,0)
-  //   - Quoted strings:        content: "a;b"   content: 'x;y'
   static std::vector<std::string> splitProperties(const std::string& propertiesStr) {
     std::vector<std::string> properties;
     std::string current;
     int  parenDepth = 0;
-    char inQuote    = 0; // '\0' = not in a string literal
+    char inQuote    = 0; 
 
     for (size_t i = 0; i < propertiesStr.size(); ++i) {
       char c = propertiesStr[i];
 
       if (inQuote) {
         current += c;
-        // End of quoted string (ignore escaped quotes).
         if (c == inQuote && (i == 0 || propertiesStr[i - 1] != '\\'))
           inQuote = 0;
       } else if (c == '"' || c == '\'') {
@@ -234,7 +215,6 @@ private:
         if (parenDepth > 0) --parenDepth;
         current += c;
       } else if (c == ';' && parenDepth == 0) {
-        // Real declaration boundary — not inside parens or a string.
         std::string trimmed = trim(current);
         if (!trimmed.empty()) properties.push_back(trimmed);
         current.clear();
@@ -242,7 +222,6 @@ private:
         current += c;
       }
     }
-    // Handle the last declaration when there is no trailing semicolon.
     std::string trimmed = trim(current);
     if (!trimmed.empty()) properties.push_back(trimmed);
 
@@ -258,13 +237,8 @@ private:
     return {name, value};
   }
 
-  // Returns true for at-rules whose body contains nested rule-sets rather than
-  // plain declarations (@media, @keyframes, @supports, @layer, …).
-  // Non-nesting at-rules (@import, @charset, @namespace) return false because
-  // they have no block body at all and are simply skipped via an empty body.
   static bool isNestedAtRule(const std::string& selector) {
     if (selector.empty() || selector[0] != '@') return false;
-    // These at-rules never have a { … } block of their own.
     static const std::vector<std::string> leafAtRules = {
       "@import", "@charset", "@namespace"
     };
@@ -273,10 +247,9 @@ private:
           selector.substr(0, leaf.size()) == leaf)
         return false;
     }
-    return true; // @media, @keyframes, @supports, @layer, @font-face, etc.
+    return true;
   }
 
-  // Guard against path traversal attacks when loading CSS from user-supplied paths.
   static void validateFilePath(const std::string& filename) {
     if (filename.empty())
       throw std::invalid_argument("File path cannot be empty");
@@ -295,8 +268,6 @@ public:
       auto [selector, body] = splitSelectorAndBody(ruleStr);
       if (selector.empty()) continue;
 
-      // Skip nested at-rules (@media, @keyframes, …) — their bodies contain
-      // rule-sets, not declarations, so they cannot be parsed as flat properties.
       if (isNestedAtRule(selector)) continue;
 
       if (body.empty()) continue;
