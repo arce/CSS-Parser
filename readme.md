@@ -68,8 +68,10 @@ int main() {
 try {
     CSS::CSSDocument doc = CSS::CSSParser::parseFile("styles.css");
     std::cout << "Loaded " << doc.getRuleCount() << " rules" << std::endl;
+} catch (const std::invalid_argument& e) {
+    std::cerr << "Invalid path: " << e.what() << std::endl; // e.g. path traversal attempt
 } catch (const std::runtime_error& e) {
-    std::cerr << "Error: " << e.what() << std::endl;
+    std::cerr << "Error: " << e.what() << std::endl; // file not found / unreadable
 }
 ```
 
@@ -81,9 +83,12 @@ if (doc.hasSelector("h1")) {
     // Get the rule
     CSS::CSSRule* rule = doc.getRule("h1");
     
-    // Get a property value
-    std::string color = rule->getProperty("color");
-    std::cout << "h1 color: " << color << std::endl;
+    // Get a property value (returns std::optional<std::string>)
+    auto color = rule->getProperty("color");
+    if (color) std::cout << "h1 color: " << *color << std::endl;
+
+    // Or use getPropertyOr() for a fallback default
+    std::string fontSize = rule->getPropertyOr("font-size", "16px");
     
     // Modify an existing property
     rule->setProperty("font-size", "32px");
@@ -140,24 +145,18 @@ doc.clear();
 
 ## API Reference
 
-### CSSProperty (struct)
-| Member       | Description                               |
-| ------------ | ----------------------------------------- |
-| `name`       | Property name                             |
-| `value`      | Property value                            |
-| `toString()` | Returns formatted string `"name: value;"` |
-
 ### CSSRule (class)
-| Method                     | Description                            |
-| -------------------------- | -------------------------------------- |
-| `getSelector()`            | Returns the selector string            |
-| `setSelector(selector)`    | Sets the selector                      |
-| `setProperty(name, value)` | Sets or updates a property             |
-| `hasProperty(name)`        | Checks if a property exists            |
-| `getProperty(name)`        | Returns property value or empty string |
-| `removeProperty(name)`     | Removes a property                     |
-| `getProperties()`          | Returns map of all properties          |
-| `toString()`               | Returns formatted CSS rule             |
+| Method                          | Description                                                   |
+| ------------------------------- | ------------------------------------------------------------- |
+| `getSelector()`                 | Returns the selector string                                   |
+| `setSelector(selector)`         | Sets the selector                                             |
+| `setProperty(name, value)`      | Sets or updates a property                                    |
+| `hasProperty(name)`             | Checks if a property exists                                   |
+| `getProperty(name)`             | Returns `std::optional<std::string>` — `nullopt` if not found |
+| `getPropertyOr(name, default)`  | Returns property value or `default` if not found             |
+| `removeProperty(name)`          | Removes a property                                            |
+| `getProperties()`               | Returns map of all properties                                 |
+| `toString()`                    | Returns formatted CSS rule                                    |
 
 ### CSSDocument (class)
 | Method                     | Description                                 |
@@ -172,17 +171,16 @@ doc.clear();
 | `toString()`               | Returns formatted CSS document              |
 
 ### CSSParser (static class)
-| Method                | Description                       |
-| --------------------- | --------------------------------- |
-| `parse(cssText)`      | Parses CSS string into a document |
-| `parseFile(filename)` | Parses CSS file into a document   |
+| Method                | Description                                                                  |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `parse(cssText)`      | Parses CSS string into a document; strips comments automatically             |
+| `parseFile(filename)` | Parses CSS file into a document; throws `std::invalid_argument` on bad paths |
 
 ## Limitations
 
-- Does not parse CSS comments (they are currently ignored)
 - Does not validate CSS syntax or property values
-- Multiple selectors separated by commas are treated as individual selectors
-- Does not handle media queries or `@` rules (yet)
+- Multiple selectors separated by commas are treated as a single combined selector
+- Nested at-rules (`@media`, `@keyframes`, `@supports`, etc.) are detected and skipped — their inner rules are not parsed
 - Nested CSS rules (SCSS/SASS) are not supported
 
 ## Example Output
